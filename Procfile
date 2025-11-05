@@ -1,1 +1,1 @@
-worker: python coinbase-ai-bot.py
+web: python  coinbase-ai-bot.py
