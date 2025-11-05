@@ -126,8 +126,14 @@ def receive_update():
     return "ok", 200
 
 def run_webhook():
-    bot.delete_webhook()
-    bot.set_webhook(url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}")
+    import asyncio
+
+async def setup_webhook():
+    await bot.delete_webhook()
+    await bot.set_webhook(url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}")
+
+asyncio.run(setup_webhook())
+
     threading.Thread(target=signal_loop, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
 
