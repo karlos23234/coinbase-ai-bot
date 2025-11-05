@@ -1,0 +1,5 @@
+requests
+pandas
+ta
+python-telegram-bot==20.4
+openai==2.7.1
