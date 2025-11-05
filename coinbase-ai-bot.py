@@ -125,15 +125,12 @@ def receive_update():
     asyncio.run(app_instance.process_update(update))
     return "ok", 200
 
+async def setup_webhook():
+    await bot.delete_webhook()
+    await bot.set_webhook(url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}")
+
 def run_webhook():
-    import asyncio
-
-    async def setup_webhook():
-        await bot.delete_webhook()
-        await bot.set_webhook(url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}")
-
     asyncio.run(setup_webhook())
-
     threading.Thread(target=signal_loop, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
 
@@ -142,5 +139,10 @@ if __name__ == "__main__":
     app_instance = Application.builder().token(TELEGRAM_TOKEN).build()
     app_instance.add_handler(CommandHandler("start", start))
     app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
+
     print("🚀 Starting Coinbase AI Bot with Webhook...")
+
+    # ԱՅՍ ՏՈՂԸ ԱՎԵԼԱՑՆԵԼ — առանց դրա սխալ է տալիս
+    asyncio.run(app_instance.initialize())
+
     run_webhook()
