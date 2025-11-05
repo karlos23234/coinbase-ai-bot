@@ -1,26 +1,31 @@
+import os
 import requests, time, pandas as pd, threading, asyncio, random
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from openai import OpenAI
+from flask import Flask, request
 
-# ======== ⚙️ Քո կարգավորումները ========
-TELEGRAM_TOKEN = "TELEGRAM_TOKEN"
-CHAT_ID = "CHAT_ID"
-OPENAI_API_KEY = "OPENAI_API_KEY"
+# ======== ⚙️ Կարգավորումներ ========
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "YOUR_TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID", "YOUR_CHAT_ID")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://YOUR_RENDER_URL.onrender.com")
+
 client = OpenAI(api_key=OPENAI_API_KEY)
-
 bot = Bot(token=TELEGRAM_TOKEN)
+
+app = Flask(__name__)
 
 COINS = [
     "BTC-USD", "ETH-USD", "SOL-USD", "ADA-USD", "AVAX-USD",
     "LTC-USD", "MATIC-USD", "BCH-USD", "DOGE-USD"
 ]
 
-INTERVAL = 3600  # 🕐 1 ժամ
+INTERVAL = 3600  # 1 ժամ
 
-# ======== 📈 Տվյալների ստացում ========
+# ======== 📈 Գների տվյալներ ========
 def get_prices(symbol, granularity=INTERVAL):
     url = f"https://api.exchange.coinbase.com/products/{symbol}/candles?granularity={granularity}"
     resp = requests.get(url)
@@ -43,10 +48,8 @@ def get_signal(symbol):
 
     last = df.iloc[-1]
     prev = df.iloc[-2]
-
     rsi, close, ema20, ema50 = last["rsi"], last["close"], last["ema20"], last["ema50"]
 
-    # 💡 Trend filter
     if ema20 > ema50 and rsi < 40 and close > ema20 and prev["close"] < prev["ema20"]:
         direction = "BUY"
     elif ema20 < ema50 and rsi > 60 and close < ema20 and prev["close"] > prev["ema20"]:
@@ -54,7 +57,6 @@ def get_signal(symbol):
     else:
         return None, rsi
 
-    # 🎯 Profit / Stop-loss առաջարկներ
     if direction == "BUY":
         profit = round(close * (1 + random.uniform(0.025, 0.04)), 4)
         stop = round(close * (1 - random.uniform(0.012, 0.02)), 4)
@@ -72,7 +74,7 @@ def get_signal(symbol):
 
     return signal_text, rsi
 
-# ======== 🧠 AI գնահատում ========
+# ======== 🤖 AI գնահատում ========
 async def ai_analyze_signal(signal_text: str) -> str:
     prompt = f"Դու փորձառու crypto trader ես։ Վերլուծիր այս սիգնալը և գնահատիր վստահությունը՝ բարձր, միջին կամ ցածր։ Պատասխանիր հայերեն.\n\n{signal_text}"
     response = client.chat.completions.create(
@@ -81,13 +83,9 @@ async def ai_analyze_signal(signal_text: str) -> str:
     )
     return response.choices[0].message.content.strip()
 
-# ======== 🤖 Բոտի հրամաններ ========
+# ======== Telegram Bot ========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Բարի գալուստ **Smart Crypto Bot**-ին!\n\n"
-        "📊 Ես ստուգում եմ շուկան ամեն ժամ մեկ և ուղարկում եմ միայն վստահելի BUY/SELL սիգնալներ՝ profit/stop-loss-ով։\n"
-        "💬 Կարող ես ինձ գրել ցանկացած crypto հարց։"
-    )
+    await update.message.reply_text("👋 Բարի գալուստ **Coinbase AI Bot**-ին!\nՍտուգում եմ շուկան և ուղարկում վստահելի սիգնալներ։")
 
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
@@ -96,10 +94,8 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
     )
-    answer = response.choices[0].message.content.strip()
-    await update.message.reply_text(answer)
+    await update.message.reply_text(response.choices[0].message.content.strip())
 
-# ======== 🚀 Սիգնալների ֆունկցիա ========
 def signal_loop():
     while True:
         print("🔄 Ստուգում է շուկան...")
@@ -111,21 +107,34 @@ def signal_loop():
                 time.sleep(2)
             except Exception as e:
                 print("❌", e)
-        time.sleep(3600)  # 1 ժամ
+        time.sleep(3600)
 
 async def send_ai_signal(signal_text):
     ai_eval = await ai_analyze_signal(signal_text)
     final_msg = f"{signal_text}\n\n🤖 AI գնահատում՝ {ai_eval}"
     bot.send_message(chat_id=CHAT_ID, text=final_msg, parse_mode="Markdown")
 
-# ======== 🏁 Գործարկում ========
-def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-    threading.Thread(target=signal_loop, daemon=True).start()
-    print("✅ Bot started.")
-    app.run_polling()
+# ======== Flask webhook ========
+@app.route("/")
+def home():
+    return "✅ Coinbase AI Bot is running with webhook!", 200
 
+@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+def receive_update():
+    update = Update.de_json(request.get_json(force=True), bot)
+    asyncio.run(app_instance.process_update(update))
+    return "ok", 200
+
+def run_webhook():
+    bot.delete_webhook()
+    bot.set_webhook(url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}")
+    threading.Thread(target=signal_loop, daemon=True).start()
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+
+# ======== Start ========
 if __name__ == "__main__":
-    main()
+    app_instance = Application.builder().token(TELEGRAM_TOKEN).build()
+    app_instance.add_handler(CommandHandler("start", start))
+    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
+    print("🚀 Starting Coinbase AI Bot with Webhook...")
+    run_webhook()
