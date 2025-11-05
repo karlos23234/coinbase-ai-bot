@@ -119,7 +119,7 @@ async def send_ai_signal(signal_text):
 def home():
     return "✅ Coinbase AI Bot is running with webhook!", 200
 
-@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+@app.route("/webhook", methods=["POST"])
 def receive_update():
     update = Update.de_json(request.get_json(force=True), bot)
     asyncio.run(app_instance.process_update(update))
@@ -127,7 +127,7 @@ def receive_update():
 
 async def setup_webhook():
     await bot.delete_webhook()
-    await bot.set_webhook(url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}")
+    await bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
 
 def run_webhook():
     asyncio.run(setup_webhook())
