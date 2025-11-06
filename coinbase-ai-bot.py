@@ -75,7 +75,7 @@ def analyze(symbol):
         signals.append("High Volume")
         confidence += 25
 
-    signal_type = "BUY" if confidence >= 75 else "SELL" if confidence <= -75 else None
+    signal_type = "BUY" if confidence >= 50 else "SELL" if confidence <= -50 else None
     if not signal_type:
         return None
 
@@ -144,4 +144,5 @@ if __name__ == "__main__":
     print("✅ Bot running on Render...")
     threading.Thread(target=loop_signals, daemon=True).start()
     app.run(host="0.0.0.0", port=10000)
+
 
