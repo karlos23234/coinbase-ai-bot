@@ -27,7 +27,7 @@ COINS = [
     "ICP-USD","APT-USD","XTZ-USD","XLM-USD"
 ]
 
-SIGNAL_CHECK_INTERVAL = 30
+SIGNAL_CHECK_INTERVAL = 1800  # 30 րոպե = 1800 վայրկյան
 CANDLE_GRANULARITY = 60
 MIN_CANDLES = 50
 
@@ -176,4 +176,3 @@ if __name__ == "__main__":
     loop.run_until_complete(init_and_start())
     threading.Thread(target=signal_loop, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
-
