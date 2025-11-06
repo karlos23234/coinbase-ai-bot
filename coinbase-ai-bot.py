@@ -1,8 +1,10 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import telebot
 import requests
 import time
+import random
 
-BOT_TOKEN = "ՔՈ_TOKENԸ_ԴԻՐ_ԱՅՍՏԵՂ"
+BOT_TOKEN = "ՔՈ_TOKENԸ"
 CHAT_ID = "ՔՈ_CHAT_ID_Ը"
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -15,59 +17,67 @@ COINS = [
 def get_signal(coin):
     try:
         url = f"https://api.coinbase.com/v2/prices/{coin}/spot"
-        response = requests.get(url)
-        data = response.json()
-        price = float(data["data"]["amount"])
+        response = requests.get(url, timeout=5)
+        price = float(response.json()["data"]["amount"])
 
-        # Պարզ օրինակ՝ ցույց տալու համար
-        rsi = (price % 100) / 100  
-        macd = (price * 1.1) % 100 / 100
-        ema = (price * 0.9) % 100 / 100
+        # Պարզ confidence հաշվարկ
+        conf = ((price % 100) / 100 - 0.5) * 200  # [-100, +100]
 
-        confidence = ((rsi + macd + ema) / 3) * 100 - 50
-
-        if confidence >= 75:
-            signal_type = "🟢 Strong BUY"
-        elif confidence >= 50:
-            signal_type = "🟡 Medium BUY"
-        elif confidence >= 30:
-            signal_type = "🟠 Weak BUY"
-        elif confidence <= -75:
-            signal_type = "🔴 Strong SELL"
-        elif confidence <= -50:
-            signal_type = "🟣 Medium SELL"
-        elif confidence <= -30:
-            signal_type = "⚫ Weak SELL"
+        if conf >= 75:
+            signal = "🟢 Strong BUY"
+        elif conf >= 50:
+            signal = "🟡 Medium BUY"
+        elif conf >= 30:
+            signal = "🟠 Weak BUY"
+        elif conf <= -75:
+            signal = "🔴 Strong SELL"
+        elif conf <= -50:
+            signal = "🟣 Medium SELL"
+        elif conf <= -30:
+            signal = "⚫ Weak SELL"
         else:
-            signal_type = None
+            return None
 
-        if signal_type:
-            bot.send_message(
-                CHAT_ID,
-                f"💎 *{coin}* Signal Detected!\n\n"
-                f"📈 Type: {signal_type}\n"
-                f"💰 Confidence: {abs(confidence):.1f}%\n"
-                f"💵 Current Price: ${price:.2f}",
-                parse_mode="Markdown"
-            )
-            return True
-        return False
+        # Stop Loss / Take Profit
+        sl_p = 0.03 + random.uniform(0.01, 0.02)
+        tp_p = 0.06 + random.uniform(0.02, 0.03)
 
-    except Exception as e:
-        print(f"Error fetching {coin}: {e}")
-        return False
+        sl = price * (1 - sl_p) if "BUY" in signal else price * (1 + sl_p)
+        tp = price * (1 + tp_p) if "BUY" in signal else price * (1 - tp_p)
+
+        msg = (
+            f"📊 *{coin} Signal!*\n"
+            f"💡 Type: {signal}\n"
+            f"🤖 Confidence: {abs(conf):.1f}%\n"
+            f"💰 Price: ${price:.2f}\n"
+            f"🎯 TP: ${tp:.2f}\n"
+            f"🛑 SL: ${sl:.2f}\n"
+            f"⏰ Timeframe: 30m"
+        )
+        return msg
+    except:
+        return None
+
+def check_all():
+    signals = []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(get_signal, coin): coin for coin in COINS}
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                signals.append(result)
+
+    if signals:
+        for msg in signals:
+            bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
+            time.sleep(1)
+    else:
+        bot.send_message(CHAT_ID, "⚪ No strong signals detected this cycle.")
 
 def main():
-    bot.send_message(CHAT_ID, "🤖 Top20 Coinbase Signal Bot started!\nChecking every 10 minutes...")
+    bot.send_message(CHAT_ID, "🤖 Top20 Coinbase Signal Bot started with ThreadPool!\nChecking every 10 minutes...")
     while True:
-        any_signal = False
-        for coin in COINS:
-            if get_signal(coin):
-                any_signal = True
-            time.sleep(2)
-
-        if not any_signal:
-            bot.send_message(CHAT_ID, "⚪ No strong signals detected this cycle.")
+        check_all()
         bot.send_message(CHAT_ID, "✅ Cycle complete. Next check in 10 minutes ⏱️")
         time.sleep(600)
 
