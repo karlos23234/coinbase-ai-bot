@@ -16,7 +16,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 app = Flask(__name__)
 
-    COINS = [
+COINS = [
     "BTC-USD", "ETH-USD", "SOL-USD", "ADA-USD", "XRP-USD", "DOGE-USD",
     "AVAX-USD", "LTC-USD", "LINK-USD", "MATIC-USD", "BCH-USD", "NEAR-USD",
     "UNI-USD", "ATOM-USD", "APT-USD", "ICP-USD", "ARB-USD", "FIL-USD",
@@ -171,4 +171,5 @@ if __name__ == "__main__":
     print("✅ Bot running...")
     threading.Thread(target=loop_signals, daemon=True).start()
     app.run(host="0.0.0.0", port=10000)
+
 
