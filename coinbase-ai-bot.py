@@ -50,6 +50,7 @@ def analyze(symbol):
     signals = []
     confidence = 0
 
+    # RSI
     if rsi.iloc[-1] < 30:
         signals.append("RSI<30 (BUY)")
         confidence += 25
@@ -57,6 +58,7 @@ def analyze(symbol):
         signals.append("RSI>70 (SELL)")
         confidence -= 25
 
+    # MACD
     if macd.iloc[-1] > macd.iloc[-2]:
         signals.append("MACD rising (BUY)")
         confidence += 25
@@ -64,6 +66,7 @@ def analyze(symbol):
         signals.append("MACD falling (SELL)")
         confidence -= 25
 
+    # EMA Trend
     if ema20.iloc[-1] > ema50.iloc[-1]:
         signals.append("EMA20>EMA50 (BUY)")
         confidence += 25
@@ -71,11 +74,13 @@ def analyze(symbol):
         signals.append("EMA20<EMA50 (SELL)")
         confidence -= 25
 
+    # Volume
     if volume.iloc[-1] > volume.mean() * 1.1:
         signals.append("High Volume")
         confidence += 25
 
-    signal_type = "BUY" if confidence >= 50 else "SELL" if confidence <= -50 else None
+    # 10%-ից սկսած ուղարկենք
+    signal_type = "BUY" if confidence >= 10 else "SELL" if confidence <= -10 else None
     if not signal_type:
         return None
 
@@ -85,6 +90,14 @@ def analyze(symbol):
     take_profit = price * (1 + volatility * 1.5) if signal_type == "BUY" else price * (1 - volatility * 1.5)
     stop_loss = price * (1 - volatility * 0.8) if signal_type == "BUY" else price * (1 + volatility * 0.8)
 
+    # Գույն ըստ վստահության
+    if abs(confidence) >= 70:
+        emoji = "🟢"
+    elif abs(confidence) >= 40:
+        emoji = "🟡"
+    else:
+        emoji = "🔴"
+
     return {
         "symbol": symbol,
         "type": signal_type,
@@ -92,7 +105,8 @@ def analyze(symbol):
         "price": price,
         "tp": take_profit,
         "sl": stop_loss,
-        "signals": signals
+        "signals": signals,
+        "emoji": emoji
     }
 
 def check_all():
@@ -103,34 +117,35 @@ def check_all():
         if result:
             found = True
             msg = f"""
-📊 *{result['symbol']} Signal Detected!*
+{result['emoji']} *{result['symbol']} Signal!*
 💡 Type: *{result['type']}*
-🤖 Confidence: {result['confidence']}%
-💰 Current Price: {result['price']:.2f}$
+📊 Confidence: *{result['confidence']}%*
+💰 Price: {result['price']:.2f}$
 🎯 Take Profit: {result['tp']:.2f}$
 🛑 Stop Loss: {result['sl']:.2f}$
 📈 Indicators:
 {chr(10).join(['- ' + s for s in result['signals']])}
-⏰ Timeframe: 30m
+⏰ 30m timeframe
 """
             try:
                 bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
-                time.sleep(1.5)  # Telegram-ի limit-ից խուսափելու համար
+                time.sleep(1)
             except Exception as e:
-                print(f"⚠️ Error sending message: {e}")
-                time.sleep(3)
+                print(f"⚠️ Telegram send error: {e}")
+                time.sleep(2)
     if not found:
-        bot.send_message(CHAT_ID, "⚪ No strong signals detected this cycle.")
-    bot.send_message(CHAT_ID, "✅ Cycle complete. Next check in 10 minutes ⏱️")
+        bot.send_message(CHAT_ID, "⚪ No signals this cycle.")
+    else:
+        bot.send_message(CHAT_ID, "✅ Cycle complete. Next check in 3 minutes ⏱️")
 
 def loop_signals():
     while True:
         check_all()
-        time.sleep(600)  # 10 րոպե
+        time.sleep(180)  # 3 րոպե
 
 @app.route('/')
 def home():
-    return "Bot is running on Render ✅"
+    return "Bot is running ✅"
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -140,11 +155,11 @@ def webhook():
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "🤖 Top20 Coinbase Signal Bot started!\nChecking every 10 minutes...")
+    bot.reply_to(message, "🤖 Bot started! Checking every 3 minutes, signals from 10%+")
 
 if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url="https://coinbase-ai-bot.onrender.com/webhook")
-    print("✅ Bot running on Render...")
+    print("✅ Bot running...")
     threading.Thread(target=loop_signals, daemon=True).start()
     app.run(host="0.0.0.0", port=10000)
