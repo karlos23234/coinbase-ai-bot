@@ -1,5 +1,6 @@
 import os
 import time
+import threading
 import requests
 import pandas as pd
 import numpy as np
@@ -10,18 +11,21 @@ from ta.trend import EMAIndicator, MACD
 
 # === CONFIG ===
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")  # for example, your chat id
+CHAT_ID = os.getenv("CHAT_ID")
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 app = Flask(__name__)
 
-COINS = ["BTC-USD", "ETH-USD", "SOL-USD", "ADA-USD", "XRP-USD", "DOGE-USD", "AVAX-USD",
-         "LTC-USD", "LINK-USD", "MATIC-USD", "BCH-USD", "NEAR-USD", "UNI-USD", "ATOM-USD",
-         "APT-USD", "ICP-USD", "ARB-USD", "FIL-USD", "PEPE-USD", "SHIB-USD"]
+COINS = [
+    "BTC-USD", "ETH-USD", "SOL-USD", "ADA-USD", "XRP-USD", "DOGE-USD",
+    "AVAX-USD", "LTC-USD", "LINK-USD", "MATIC-USD", "BCH-USD", "NEAR-USD",
+    "UNI-USD", "ATOM-USD", "APT-USD", "ICP-USD", "ARB-USD", "FIL-USD",
+    "PEPE-USD", "SHIB-USD"
+]
 
 # === FUNCTIONS ===
 def get_data(symbol, limit=100):
-    url = f"https://api.exchange.coinbase.com/products/{symbol}/candles?granularity=1800"  # 30min
+    url = f"https://api.exchange.coinbase.com/products/{symbol}/candles?granularity=1800"
     resp = requests.get(url)
     data = resp.json()
     if not isinstance(data, list):
@@ -38,17 +42,14 @@ def analyze(symbol):
     close = df['close']
     volume = df['volume']
 
-    # Indicators
     rsi = RSIIndicator(close).rsi()
     ema20 = EMAIndicator(close, 20).ema_indicator()
     ema50 = EMAIndicator(close, 50).ema_indicator()
     macd = MACD(close).macd()
 
-    latest = len(close) - 1
     signals = []
     confidence = 0
 
-    # RSI
     if rsi.iloc[-1] < 30:
         signals.append("RSI<30 (BUY)")
         confidence += 25
@@ -56,7 +57,6 @@ def analyze(symbol):
         signals.append("RSI>70 (SELL)")
         confidence -= 25
 
-    # MACD
     if macd.iloc[-1] > macd.iloc[-2]:
         signals.append("MACD rising (BUY)")
         confidence += 25
@@ -64,7 +64,6 @@ def analyze(symbol):
         signals.append("MACD falling (SELL)")
         confidence -= 25
 
-    # EMA Trend
     if ema20.iloc[-1] > ema50.iloc[-1]:
         signals.append("EMA20>EMA50 (BUY)")
         confidence += 25
@@ -72,13 +71,11 @@ def analyze(symbol):
         signals.append("EMA20<EMA50 (SELL)")
         confidence -= 25
 
-    # Volume confirmation
     if volume.iloc[-1] > volume.mean() * 1.1:
         signals.append("High Volume")
         confidence += 25
 
     signal_type = "BUY" if confidence >= 75 else "SELL" if confidence <= -75 else None
-
     if not signal_type:
         return None
 
@@ -99,9 +96,12 @@ def analyze(symbol):
     }
 
 def check_all():
+    print("🔄 Checking signals...")
+    found = False
     for coin in COINS:
         result = analyze(coin)
         if result:
+            found = True
             msg = f"""
 📊 *{result['symbol']} Signal Detected!*
 💡 Type: *{result['type']}*
@@ -115,7 +115,14 @@ def check_all():
             """
             bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
             time.sleep(2)
-    bot.send_message(CHAT_ID, "✅ Cycle complete. Next check in 30 min ⏱️")
+    if not found:
+        bot.send_message(CHAT_ID, "⚪ No strong signals detected this cycle.")
+    bot.send_message(CHAT_ID, "✅ Cycle complete. Next check in 10 minutes ⏱️")
+
+def loop_signals():
+    while True:
+        check_all()
+        time.sleep(600)  # 10 րոպե
 
 @app.route('/')
 def home():
@@ -129,11 +136,12 @@ def webhook():
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "🤖 Top20 Coinbase Signal Bot started!\nChecking every 30 minutes...")
+    bot.reply_to(message, "🤖 Top20 Coinbase Signal Bot started!\nChecking every 10 minutes...")
 
 if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url="https://coinbase-ai-bot.onrender.com/webhook")
     print("✅ Bot running on Render...")
-    check_all()  # First check immediately
+    threading.Thread(target=loop_signals, daemon=True).start()
+    app.run(host="0.0.0.0", port=10000)
 
